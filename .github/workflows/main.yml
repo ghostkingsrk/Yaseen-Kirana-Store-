@@ -1,3 +1,4 @@
+
 name: Build Yaseen Kirana Store Customer and Admin APKs
 
 on:
@@ -9,6 +10,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,6 +35,29 @@ jobs:
           test -f extracted/yaseen_android/app/build.gradle
           test -f extracted/yaseen_android/app/src/main/java/in/yaseenkirana/store/StoreFirebaseMessagingService.java
 
+      - name: Fix Android minimum SDK for Firebase
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("extracted/yaseen_android")
+
+          for p in root.rglob("*"):
+              if p.is_file() and p.name in (
+                  "AndroidManifest.xml",
+                  "build.gradle",
+                  "build.gradle.kts"
+              ):
+                  s = p.read_text()
+                  s = s.replace('android:minSdkVersion="23"', 'android:minSdkVersion="24"')
+                  s = s.replace('minSdkVersion 23', 'minSdkVersion 24')
+                  s = s.replace('minSdk = 23', 'minSdk = 24')
+                  s = s.replace('minSdkVersion = 23', 'minSdkVersion = 24')
+                  p.write_text(s)
+
+          print("Minimum SDK fix applied.")
+          PY
+
       - name: Build Customer and Admin debug APKs
         run: |
           cd extracted/yaseen_android
@@ -41,7 +66,7 @@ jobs:
       - name: Upload both APKs
         uses: actions/upload-artifact@v4
         with:
-          name: Yaseen-Kirana-Store-FCM-Diagnostic-Customer-and-Admin-APKs
+          name: Yaseen-Kirana-Store-FCM-Customer-and-Admin-APKs
           path: |
             extracted/yaseen_android/app/build/outputs/apk/customer/debug/*.apk
             extracted/yaseen_android/app/build/outputs/apk/admin/debug/*.apk
