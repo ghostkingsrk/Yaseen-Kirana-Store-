@@ -21,76 +21,109 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
+
       - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Extract FCM diagnostic Android source
+      - name: Extract Android source
         run: |
           ZIP_FILE="Yaseen_Kirana_Store_FCM_ANDROID_DIAGNOSTIC_FIX.zip"
           test -f "$ZIP_FILE"
           mkdir extracted
           unzip -q "$ZIP_FILE" -d extracted
-          test -f extracted/yaseen_android/app/build.gradle
-          test -f extracted/yaseen_android/app/src/main/java/in/yaseenkirana/store/StoreFirebaseMessagingService.java
 
-      - name: Force Android minimum SDK to 24
+          ROOT="extracted/yaseen_android"
+
+          test -f "$ROOT/app/build.gradle"
+          test -f "$ROOT/app/src/main/AndroidManifest.xml"
+          test -f "$ROOT/app/src/main/java/in/yaseenkirana/store/StoreFirebaseMessagingService.java"
+          test -f "$ROOT/app/src/main/res/drawable/splash_background.xml"
+
+      - name: Fix splash logo reference
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("extracted/yaseen_android/app/src/main/res")
+          splash = root / "drawable/splash_background.xml"
+          text = splash.read_text()
+
+          bad = "@drawable-nodpi/yaseen_store_logo"
+          good = "@drawable/yaseen_store_logo"
+
+          if bad in text:
+              text = text.replace(bad, good)
+              splash.write_text(text)
+              print("Splash logo reference fixed.")
+          elif good in text:
+              print("Splash logo reference already correct.")
+          else:
+              raise SystemExit("Unexpected splash logo reference. Stopping safely.")
+
+          logos = list(root.glob("drawable*/yaseen_store_logo.*"))
+          if not logos:
+              raise SystemExit("Yaseen logo file is missing.")
+          print("Logo verified:", logos[0])
+          PY
+
+      - name: Set Android minimum SDK to 24
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
 
           root = Path("extracted/yaseen_android")
-          changed = []
 
-          for p in root.rglob("*"):
-              if not p.is_file():
+          targets = [
+              root / "app/build.gradle",
+              root / "app/build.gradle.kts",
+              root / "app/src/main/AndroidManifest.xml"
+          ]
+
+          patterns = [
+              (r'(\bminSdk\s*=\s*)23\b', r'\g<1>24'),
+              (r'(\bminSdkVersion\s+|minSdkVersion\s*=\s*)23\b', r'\g<1>24'),
+              (r'(android:minSdkVersion\s*=\s*["\'])23(["\'])', r'\g<1>24\2')
+          ]
+
+          for path in targets:
+              if not path.is_file():
                   continue
 
-              if p.name not in ("AndroidManifest.xml", "build.gradle", "build.gradle.kts"):
-                  continue
+              content = path.read_text()
+              original = content
 
-              s = p.read_text()
-              original = s
+              for pattern, replacement in patterns:
+                  content = re.sub(pattern, replacement, content)
 
-              s = re.sub(
-                  r'(android:minSdkVersion\s*=\s*["\'])23(["\'])',
-                  r'\g<1>24\2',
-                  s
-              )
+              if content != original:
+                  path.write_text(content)
+                  print("Updated:", path)
 
-              s = re.sub(
-                  r'(\bminSdkVersion\s+)(23)\b',
-                  r'\g<1>24',
-                  s
-              )
+          gradle_file = root / "app/build.gradle"
+          content = gradle_file.read_text()
 
-              s = re.sub(
-                  r'(\bminSdk\s*=\s*)(23)\b',
-                  r'\g<1>24',
-                  s
-              )
+          if re.search(r'\bminSdk(?:Version)?\s*(?:=|\s)\s*23\b', content):
+              raise SystemExit("ERROR: minSdk 23 still present.")
 
-              if s != original:
-                  p.write_text(s)
-                  changed.append(str(p))
-
-          print("Files updated:", changed)
-
-          manifest = root / "app/src/main/AndroidManifest.xml"
-          content = manifest.read_text()
-
-          if re.search(r'android:minSdkVersion\s*=\s*["\']23["\']', content):
-              raise SystemExit("ERROR: Manifest still contains minSdkVersion 23")
-
-          print("Manifest SDK verification passed.")
+          print("Minimum SDK verification passed.")
           PY
 
-      - name: Build Customer and Admin debug APKs
+      - name: Build Customer and Admin APKs
         run: |
           cd extracted/yaseen_android
-          gradle assembleCustomerDebug assembleAdminDebug
+          gradle --no-daemon assembleCustomerDebug assembleAdminDebug
+
+      - name: Verify both APKs
+        run: |
+          test -n "$(find extracted/yaseen_android/app/build/outputs/apk/customer/debug -name '*.apk' -print -quit)"
+          test -n "$(find extracted/yaseen_android/app/build/outputs/apk/admin/debug -name '*.apk' -print -quit)"
 
       - name: Upload both APKs
         uses: actions/upload-artifact@v4
@@ -100,3 +133,4 @@ jobs:
             extracted/yaseen_android/app/build/outputs/apk/customer/debug/*.apk
             extracted/yaseen_android/app/build/outputs/apk/admin/debug/*.apk
           if-no-files-found: error
+          
