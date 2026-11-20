@@ -1,4 +1,3 @@
-
 name: Build Yaseen Kirana Store Customer and Admin APKs
 
 on:
@@ -25,13 +24,14 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Extract Android source
+      - name: Extract FCM diagnostic Android source
         run: |
-          ZIP_FILE="Yaseen_Kirana_Store_Android_Source_V1.zip"
+          ZIP_FILE="Yaseen_Kirana_Store_FCM_ANDROID_DIAGNOSTIC_FIX.zip"
           test -f "$ZIP_FILE"
           mkdir extracted
           unzip -q "$ZIP_FILE" -d extracted
           test -f extracted/yaseen_android/app/build.gradle
+          test -f extracted/yaseen_android/app/src/main/java/in/yaseenkirana/store/StoreFirebaseMessagingService.java
 
       - name: Build Customer and Admin debug APKs
         run: |
@@ -41,7 +41,7 @@ jobs:
       - name: Upload both APKs
         uses: actions/upload-artifact@v4
         with:
-          name: Yaseen-Kirana-Store-Customer-and-Admin-APKs
+          name: Yaseen-Kirana-Store-FCM-Diagnostic-Customer-and-Admin-APKs
           path: |
             extracted/yaseen_android/app/build/outputs/apk/customer/debug/*.apk
             extracted/yaseen_android/app/build/outputs/apk/admin/debug/*.apk
