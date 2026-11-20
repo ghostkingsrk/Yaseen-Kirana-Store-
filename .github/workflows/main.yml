@@ -35,27 +35,56 @@ jobs:
           test -f extracted/yaseen_android/app/build.gradle
           test -f extracted/yaseen_android/app/src/main/java/in/yaseenkirana/store/StoreFirebaseMessagingService.java
 
-      - name: Fix Android minimum SDK for Firebase
+      - name: Force Android minimum SDK to 24
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           root = Path("extracted/yaseen_android")
+          changed = []
 
           for p in root.rglob("*"):
-              if p.is_file() and p.name in (
-                  "AndroidManifest.xml",
-                  "build.gradle",
-                  "build.gradle.kts"
-              ):
-                  s = p.read_text()
-                  s = s.replace('android:minSdkVersion="23"', 'android:minSdkVersion="24"')
-                  s = s.replace('minSdkVersion 23', 'minSdkVersion 24')
-                  s = s.replace('minSdk = 23', 'minSdk = 24')
-                  s = s.replace('minSdkVersion = 23', 'minSdkVersion = 24')
-                  p.write_text(s)
+              if not p.is_file():
+                  continue
 
-          print("Minimum SDK fix applied.")
+              if p.name not in ("AndroidManifest.xml", "build.gradle", "build.gradle.kts"):
+                  continue
+
+              s = p.read_text()
+              original = s
+
+              s = re.sub(
+                  r'(android:minSdkVersion\s*=\s*["\'])23(["\'])',
+                  r'\g<1>24\2',
+                  s
+              )
+
+              s = re.sub(
+                  r'(\bminSdkVersion\s+)(23)\b',
+                  r'\g<1>24',
+                  s
+              )
+
+              s = re.sub(
+                  r'(\bminSdk\s*=\s*)(23)\b',
+                  r'\g<1>24',
+                  s
+              )
+
+              if s != original:
+                  p.write_text(s)
+                  changed.append(str(p))
+
+          print("Files updated:", changed)
+
+          manifest = root / "app/src/main/AndroidManifest.xml"
+          content = manifest.read_text()
+
+          if re.search(r'android:minSdkVersion\s*=\s*["\']23["\']', content):
+              raise SystemExit("ERROR: Manifest still contains minSdkVersion 23")
+
+          print("Manifest SDK verification passed.")
           PY
 
       - name: Build Customer and Admin debug APKs
